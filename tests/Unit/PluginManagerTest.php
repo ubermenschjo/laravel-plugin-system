@@ -14,7 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use App\Service\PlanInterface;
 use App\Service\SimplePlanService;
-use App\Plugins\ExtendedPlan\Service\ExtendedPlanService;
+use ExtendedPlan\Service\ExtendedPlanService;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
 class PluginManagerTest extends TestCase
@@ -28,14 +28,30 @@ class PluginManagerTest extends TestCase
     {
         parent::setUp();
 
-        $this->testPluginPath = app_path('Plugins/TestPlugin');
+        $this->testPluginPath = base_path('plugins/TestPlugin');
 
         Config::set('plugin.auto_activate', false);
         Config::set('plugin.delete_on_uninstall', false);
+        Config::set('plugin.paths', ['plugins']);
 
         if (!File::exists($this->testPluginPath)) {
             File::makeDirectory($this->testPluginPath, 0755, true);
         }
+        // config.php 파일 생성
+        $configContent = <<<'EOT'
+        <?php
+        return [
+            'namespace' => 'TestPlugin',
+            'psr4' => [
+                'TestPlugin\\' => __DIR__ . '/app'
+            ],
+            'basePath' => __DIR__,
+            'migrations' => __DIR__ . '/migrations',
+        ];
+        EOT;
+        File::put($this->testPluginPath . '/config.php', $configContent);
+        File::makeDirectory($this->testPluginPath . '/app', 0755, true);
+    
         $this->assertTrue(File::exists($this->testPluginPath), 'WARNING: TestPlugin directory was not created.');
 
         $this->pluginManager = new PluginManager();
@@ -87,16 +103,14 @@ class PluginManagerTest extends TestCase
         ]);
 
         $plugins = $this->pluginManager->getPlugins();
-
-        $realCount = count(File::directories(app_path('Plugins')));
-        $setUpCount = 1;
-        $this->assertEquals(2 + $realCount - $setUpCount, $plugins->count());
+        $setupCount = 1;
+        $this->assertEquals(2 + $setupCount, $plugins->count());
     }
 
 
     public function test_can_install_plugin_with_migration()
     {
-        $migrationPath = app_path('Plugins/TestPlugin/migrations');
+        $migrationPath = base_path('plugins/TestPlugin/migrations');
         if (!File::exists($migrationPath)) {
             File::makeDirectory($migrationPath, 0755, true);
         }
@@ -132,14 +146,14 @@ EOT;
 
         Artisan::shouldReceive('call')
             ->once()
-            ->with('migrate', ['--path' => 'app/Plugins/TestPlugin/migrations']);
+            ->with('migrate', ['--path' => 'plugins/TestPlugin/migrations']);
 
         // make class
-        $pluginClass = 'App\\Plugins\\TestPlugin\\TestPlugin';
+        $pluginClass = 'TestPlugin\\TestPlugin';
         $pluginContent = <<<'EOT'
 <?php
 
-namespace App\Plugins\TestPlugin;
+namespace TestPlugin;
 
 use App\Plugins\PluginInterface;
 
@@ -150,7 +164,7 @@ class TestPlugin implements PluginInterface
     public function unregister(): void {}
 }
 EOT;
-        $result = File::put(app_path('Plugins/TestPlugin/TestPlugin.php'), $pluginContent);
+        $result = File::put($this->testPluginPath . '/app/TestPlugin.php', $pluginContent);
         $this->assertNotFalse($result, 'WARNING: TestPlugin/TestPlugin.php was not created.');
 
         $this->pluginManager->installPlugin('TestPlugin');
@@ -166,7 +180,7 @@ EOT;
     public function test_can_uninstall_plugin_with_migration()
     {
 
-        $migrationPath = app_path('Plugins/TestPlugin/migrations');
+        $migrationPath = $this->testPluginPath . '/migrations';
         if (!File::exists($migrationPath)) {
             File::makeDirectory($migrationPath, 0755, true);
         }
@@ -198,7 +212,7 @@ EOT;
 
         File::put($migrationPath . '/2024_11_27_000000_create_test_plugin_table.php', $migrationContent);
 
-        $pluginClass = 'App\\Plugins\\TestPlugin\\TestPlugin';
+        $pluginClass = 'TestPlugin\\TestPlugin';
         Plugin::create([
             'class' => $pluginClass,
             'active' => true,
@@ -207,7 +221,7 @@ EOT;
 
         Artisan::shouldReceive('call')
             ->once()
-            ->with('migrate:rollback', ['--path' => 'app/Plugins/TestPlugin/migrations']);
+            ->with('migrate:rollback', ['--path' => 'plugins/TestPlugin/migrations']);
 
         $this->pluginManager->uninstallPlugin($pluginClass);
 
@@ -238,7 +252,7 @@ EOT;
 
         $this->assertTrue(
             $this->pluginManager->getActivePlugins()
-                ->where('class', 'App\\Plugins\\ExtendedPlan\\ExtendedPlan')
+                ->where('class', 'ExtendedPlan\\ExtendedPlan')
                 ->first()
                 ->active
         );
@@ -287,7 +301,7 @@ EOT;
 
         $this->assertNotNull($testRoute);
         $this->assertEquals(
-            'App\Plugins\ExtendedPlan\Controllers\ExtendedPlanController@index',
+            'ExtendedPlan\Controllers\ExtendedPlanController@index',
             $testRoute->getAction()['controller']
         );
     }

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Plugins\ExtendedPlan\Service;
+namespace ExtendedPlan\Service;
 
 use App\Service\PlanInterface;
 

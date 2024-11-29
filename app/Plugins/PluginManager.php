@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
+use Composer\Autoload\ClassLoader;
 
 use App\Models\PlugIn;
 class PluginManager
@@ -14,10 +15,15 @@ class PluginManager
     protected $plugins = [];
     protected $autoActivate = false;
     protected $deleteOnUninstall = false;
+    protected $pluginConfigs = [];
+    protected $loader;
+
     public function __construct()
     {
         $this->autoActivate = config('plugin.auto_activate', false);
         $this->deleteOnUninstall = config('plugin.delete_on_uninstall', false);
+        $this->loader = require base_path('vendor/autoload.php');
+        $this->loadPluginConfigs();
         $this->loadPlugins();
         if($this->autoActivate) {
             $this->activatePlugins();
@@ -36,33 +42,17 @@ class PluginManager
         return PlugIn::all();
     }
 
-    private function loadPlugins($pluginName = null)
+    private function loadPlugins($pluginNameParam = null)
     {
-        $pluginPath = app_path('Plugins');
-
-        if (File::exists($pluginPath)) {
-            $directories = File::directories($pluginPath);
-
-            foreach ($directories as $directory) {
-                if ($pluginName && basename($directory) !== $this->classToName($pluginName)) {
-                    Log::debug('Skipping plugin: ' . basename($directory) . ' because it does not match ' . $pluginName);
-                    continue;
-                }
-                
-                $pluginFile = $directory . '/' . basename($directory) . '.php';
-                $pluginClass = 'App\\Plugins\\' . basename($directory) . '\\' . basename($directory);
-
-                if (!class_exists($pluginClass) && File::exists($pluginFile)) {
-                    require_once $pluginFile;
-                }
-
-                if (class_exists($pluginClass)) {
-                    $plugin = new $pluginClass();
-
-                    if ($plugin instanceof PluginInterface && $this->isPluginActive($pluginClass)) {
-                        $this->plugins[] = $plugin;
-                        Log::debug('Loaded plugin: ' . $this->classToName($pluginClass));
-                    }
+        foreach ($this->pluginConfigs as $pluginName => $config) {
+            if ($pluginNameParam && $pluginName !== $pluginNameParam) {
+                continue;
+            }
+            $pluginClass = $this->nameToClass($pluginName, $config);
+            if (class_exists($pluginClass)) {
+                $plugin = new $pluginClass();
+                if ($plugin instanceof PluginInterface && $this->isPluginActive($pluginClass)) {
+                    $this->plugins[] = $plugin;
                 }
             }
         }
@@ -112,29 +102,43 @@ class PluginManager
 
     public function installPlugin($pluginName)
     {
+        $pluginName = $this->classToName($pluginName);
+        if (!isset($this->pluginConfigs[$pluginName])) {
+            throw new \Exception("Plugin configuration not found: {$pluginName}");
+        }
+
+        $config = $this->pluginConfigs[$pluginName];
+        $pluginClass = $this->nameToClass($pluginName, $config);
         PlugIn::updateOrCreate([
-            'class' => $this->nameToClass($pluginName),
+            'class' => $pluginClass,
         ], [
             'active' => true,
         ]);
         $this->loadPlugins($pluginName);
-        $this->activatePlugin($this->nameToClass($pluginName));
+        $this->activatePlugin($pluginClass);
         $this->registerPlugins($pluginName);
         $this->bootPlugins($pluginName);
     }
 
     public function uninstallPlugin($pluginName)
     {
+        $pluginName = $this->classToName($pluginName);
+        if (!isset($this->pluginConfigs[$pluginName])) {
+            throw new \Exception("Plugin configuration not found: {$pluginName}");
+        }
+
         $plugin = collect($this->plugins)->first(function ($plugin) use ($pluginName) {
             return $this->classToName($plugin) == $pluginName;
         });
-
+        
         if ($plugin && method_exists($plugin, 'unregister')) {
             $plugin->unregister();
         }
+        
+        $this->rollbackMigrations($pluginName);
 
-        $this->rollbackMigrations($this->classToName($pluginName));
-        $pluginPath = app_path('Plugins/' . $this->classToName($pluginName));
+        $config = $this->pluginConfigs[$pluginName];
+        $pluginPath = $config['basePath'];
 
         if ($this->deleteOnUninstall && File::exists($pluginPath)) {
             File::deleteDirectory($pluginPath);
@@ -144,7 +148,7 @@ class PluginManager
             return $this->classToName($plugin) == $pluginName;
         })->toArray();
 
-        PlugIn::where('class', $this->nameToClass($pluginName))
+        PlugIn::where('class', $this->nameToClass($pluginName, $config))
             ->update(['active' => false, 'migrate_status' => 'rollback']);
     }
 
@@ -163,73 +167,69 @@ class PluginManager
         Log::debug('Activated plugin: ' . $this->classToName($pluginClass));
     }
 
-    private function runMigrations($pluginName = null)
+    /**
+     * 모든 플러그인 디렉토리에서 설정 파일을 로드
+     */
+    protected function loadPluginConfigs()
     {
-        $pluginPath = app_path('Plugins');
+        $pluginPaths = config('plugin.paths', ['plugins']);
+        
+        foreach ($pluginPaths as $basePath) {
+            if (!File::exists(base_path($basePath))) {
+                continue;
+            }
 
-        if (File::exists($pluginPath)) {
-            $directories = File::directories($pluginPath);
-
+            $directories = File::directories(base_path($basePath));
+            
             foreach ($directories as $directory) {
-                if ($pluginName && basename($directory) !== basename($pluginName)) {
-                    Log::debug('Skipping migration for ' . basename($directory) . ' because it does not match ' . $pluginName);
-                    continue;
-                }
-
-                $pluginClass = $this->nameToClass(basename($directory));
-                if (!collect($this->plugins)->contains(function($plugin) use ($pluginClass) {
-                    return get_class($plugin) === $pluginClass;
-                })) {
-                    Log::debug('Skipping migration for ' . basename($directory) . ' because it is not loaded');
-                    continue;
-                }
-
-                $migrationPath = $directory . '/migrations';
-
-                if (File::exists($migrationPath)) {
-                    Artisan::call('migrate', [
-                        '--path' => 'app/Plugins/' . $pluginName . '/migrations',
-                    ]);
-                    Log::debug('Migrated plugin: ' . $this->classToName($pluginClass));
+                $configFile = $directory . '/config.php';
+                if (File::exists($configFile)) {
+                    $pluginName = basename($directory);
+                    $config = require $configFile;
+                    
+                    $this->pluginConfigs[$pluginName] = $config;
+                    $this->registerPluginNamespace($config);
                 }
             }
         }
     }
 
-    private function rollbackMigrations($pluginName)
+    /**
+     * PSR-4 네임스페이스 등록
+     */
+    protected function registerPluginNamespace(array $config)
     {
-        $pluginPath = app_path('Plugins/' . $pluginName);
-
-        if (File::exists($pluginPath)) {
-            $migrationPath = $pluginPath . '/migrations';
-
-            if (File::exists($migrationPath)) {
-                Artisan::call('migrate:rollback', [
-                    '--path' => 'app/Plugins/' . $pluginName . '/migrations',
-                ]);
-                Log::debug('Rolled back migrations for plugin: ' . $pluginName);
+        if (isset($config['psr4']) && is_array($config['psr4'])) {
+            foreach ($config['psr4'] as $namespace => $path) {
+                $this->loader->addPsr4($namespace, $path);
             }
         }
     }
 
-    private function nameToClass($pluginName)
+    /**
+     * 플러그인 마이그레이션 실행
+     */
+    protected function runMigrations(string $pluginName)
     {
-        // if plugin name contains namespace, return it
-        if (strpos($pluginName, '\\') !== false) {
-            return $pluginName;
+        $config = $this->pluginConfigs[$pluginName];
+        $migrationPath = $this->getBasePathRelative($config['migrations']);
+
+        if (File::exists($migrationPath)) {
+            \Artisan::call('migrate', [
+                '--path' => $migrationPath
+            ]);
         }
-        return 'App\\Plugins\\' . $pluginName . '\\' . $pluginName;
     }
 
-    private function classToName($pluginClass)
+    protected function rollbackMigrations($pluginName)
     {
-        $str = '';
-        if (is_object($pluginClass)) {
-            $str = get_class($pluginClass);
-        } else if (is_string($pluginClass)) {
-            $str = $pluginClass;
+        $config = $this->pluginConfigs[$pluginName];
+        $migrationPath = $this->getBasePathRelative($config['migrations']);
+
+        if (File::exists($migrationPath)) {
+            \Artisan::call('migrate:rollback', [
+                '--path' => $migrationPath
+            ]);
         }
-        $arr = explode('\\', $str);
-        return end($arr);
     }
 }

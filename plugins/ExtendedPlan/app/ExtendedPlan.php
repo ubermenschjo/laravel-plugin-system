@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Plugins\ExtendedPlan;
+namespace ExtendedPlan;
 
 use App\Plugins\PluginInterface;
 use App\Service\PlanInterface;
-use App\Plugins\ExtendedPlan\Service\ExtendedPlanService;
+use ExtendedPlan\Service\ExtendedPlanService;
 use App\Service\SimplePlanService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -29,9 +29,8 @@ class ExtendedPlan implements PluginInterface
 
     public function boot(): void
     {
-        $this->registerRoute(self::NS, self::NS, __DIR__ . '/routes/web.php');
-
-        $this->registerView(self::NS, __DIR__ . '/views');
+        $this->registerRoute(self::NS, self::NS, __DIR__ . '/../routes/web.php');
+        $this->registerView(self::NS, __DIR__ . '/../views');
         Log::debug('ExtendedPlan booted');
     }
 

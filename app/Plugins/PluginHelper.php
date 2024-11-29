@@ -100,13 +100,17 @@ trait PluginHelper
      * @param string $pluginName
      * @return string
      */
-    private function nameToClass($pluginName)
+    private function nameToClass(string $pluginName, array $config): string
     {
-        // if plugin name contains namespace, return it
-        if (strpos($pluginName, '\\') !== false) {
-            return $pluginName;
+        if (isset($config['namespace'])) {
+            return $config['namespace'] . '\\' . $pluginName;
         }
-        return 'App\\Plugins\\' . $pluginName . '\\' . $pluginName;
+        
+        if (isset($config['psr4'])) {
+            return array_values($config['psr4'])[0] . '\\' . $pluginName;
+        }
+
+        return $pluginName . '\\' . $pluginName;
     }
 
     /**
@@ -126,4 +130,9 @@ trait PluginHelper
         return end($arr);
     }
 
+
+    private function getBasePathRelative($absolutePath)
+    {
+        return str_replace(base_path() . '/', '', $absolutePath);
+    }
 }

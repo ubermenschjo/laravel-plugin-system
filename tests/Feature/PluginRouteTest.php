@@ -16,7 +16,7 @@ class PluginRouteTest extends TestCase
         parent::setUp();
         
         // ExtendedPlanプラグインが既にインストールされているか確認し、削除する
-        if (Plugin::where('class', 'App\\Plugins\\ExtendedPlan\\ExtendedPlan')->exists()) {
+        if (Plugin::where('class', 'ExtendedPlan\\ExtendedPlan')->exists()) {
             $this->get('/plugins/ExtendedPlan/uninstall');
         }
         
@@ -43,7 +43,7 @@ class PluginRouteTest extends TestCase
 
         // プラグインがDBに正しく登録されているか確認
         $this->assertDatabaseHas('plugins', [
-            'class' => 'App\\Plugins\\ExtendedPlan\\ExtendedPlan',
+            'class' => 'ExtendedPlan\\ExtendedPlan',
             'active' => true
         ]);
     }
@@ -70,7 +70,7 @@ class PluginRouteTest extends TestCase
 
         // プラグインが無効化されているか確認
         $this->assertDatabaseHas('plugins', [
-            'class' => 'App\\Plugins\\ExtendedPlan\\ExtendedPlan',
+            'class' => 'ExtendedPlan\\ExtendedPlan',
             'active' => false
         ]);
     }

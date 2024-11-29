@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Plugins\ExtendedPlan\Controllers;
+namespace ExtendedPlan\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Service\PlanInterface;
