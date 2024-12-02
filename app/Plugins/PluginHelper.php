@@ -131,7 +131,7 @@ trait PluginHelper
     }
 
 
-    private function getBasePathRelative($absolutePath)
+    protected function getBasePathRelative($absolutePath)
     {
         return str_replace(base_path() . '/', '', $absolutePath);
     }

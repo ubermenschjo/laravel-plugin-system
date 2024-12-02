@@ -50,7 +50,9 @@ class PluginManagerTest extends TestCase
         ];
         EOT;
         File::put($this->testPluginPath . '/config.php', $configContent);
-        File::makeDirectory($this->testPluginPath . '/app', 0755, true);
+        if (!File::exists($this->testPluginPath . '/app')) {
+            File::makeDirectory($this->testPluginPath . '/app', 0755, true);
+        }
     
         $this->assertTrue(File::exists($this->testPluginPath), 'WARNING: TestPlugin directory was not created.');
 
@@ -146,7 +148,11 @@ EOT;
 
         Artisan::shouldReceive('call')
             ->once()
-            ->with('migrate', ['--path' => 'plugins/TestPlugin/migrations']);
+            ->with('plugin:migrate', [
+                'plugin' => 'TestPlugin',
+                '--path' => 'plugins/TestPlugin/migrations',
+                '--force' => true,
+            ]);
 
         // make class
         $pluginClass = 'TestPlugin\\TestPlugin';
@@ -221,7 +227,11 @@ EOT;
 
         Artisan::shouldReceive('call')
             ->once()
-            ->with('migrate:rollback', ['--path' => 'plugins/TestPlugin/migrations']);
+            ->with('plugin:migrate:rollback', [
+                'plugin' => 'TestPlugin',
+                '--path' => 'plugins/TestPlugin/migrations',
+                '--force' => true,
+            ]);
 
         $this->pluginManager->uninstallPlugin($pluginClass);
 

@@ -215,8 +215,10 @@ class PluginManager
         $migrationPath = $this->getBasePathRelative($config['migrations']);
 
         if (File::exists($migrationPath)) {
-            \Artisan::call('migrate', [
-                '--path' => $migrationPath
+            \Artisan::call('plugin:migrate', [
+                'plugin' => $pluginName,
+                '--path' => $migrationPath,
+                '--force' => true,
             ]);
         }
     }
@@ -227,8 +229,10 @@ class PluginManager
         $migrationPath = $this->getBasePathRelative($config['migrations']);
 
         if (File::exists($migrationPath)) {
-            \Artisan::call('migrate:rollback', [
-                '--path' => $migrationPath
+            \Artisan::call('plugin:migrate:rollback', [
+                'plugin' => $pluginName,
+                '--path' => $migrationPath,
+                '--force' => true,
             ]);
         }
     }
