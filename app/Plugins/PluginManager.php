@@ -214,13 +214,11 @@ class PluginManager
         $config = $this->pluginConfigs[$pluginName];
         $migrationPath = $this->getBasePathRelative($config['migrations']);
 
-        if (File::exists($migrationPath)) {
-            \Artisan::call('plugin:migrate', [
-                'plugin' => $pluginName,
-                '--path' => $migrationPath,
-                '--force' => true,
-            ]);
-        }
+        \Artisan::call('plugin:migrate', [
+            'plugin' => $pluginName,
+            '--path' => $migrationPath,
+            '--force' => true,
+        ]);
     }
 
     protected function rollbackMigrations($pluginName)
@@ -228,12 +226,10 @@ class PluginManager
         $config = $this->pluginConfigs[$pluginName];
         $migrationPath = $this->getBasePathRelative($config['migrations']);
 
-        if (File::exists($migrationPath)) {
-            \Artisan::call('plugin:migrate:rollback', [
-                'plugin' => $pluginName,
-                '--path' => $migrationPath,
-                '--force' => true,
-            ]);
-        }
+        \Artisan::call('plugin:migrate:rollback', [
+            'plugin' => $pluginName,
+            '--path' => $migrationPath,
+            '--force' => true,
+        ]);
     }
 }
