@@ -9,6 +9,7 @@ class PlugIn extends Model
     protected $table = 'plugins';
     protected $fillable = [
         'class',
+        'version',
         'active',
         'migrate_status',
     ];

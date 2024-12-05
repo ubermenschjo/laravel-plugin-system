@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 use Composer\Autoload\ClassLoader;
+use Illuminate\Support\Facades\DB;
 
 use App\Models\PlugIn;
 class PluginManager
@@ -109,11 +110,15 @@ class PluginManager
 
         $config = $this->pluginConfigs[$pluginName];
         $pluginClass = $this->nameToClass($pluginName, $config);
+        
         PlugIn::updateOrCreate([
             'class' => $pluginClass,
         ], [
             'active' => true,
+            'version' => $config['version'] ?? '1.0.0',
+            'migrate_status' => 'pending'
         ]);
+
         $this->loadPlugins($pluginName);
         $this->activatePlugin($pluginClass);
         $this->registerPlugins($pluginName);
@@ -207,29 +212,152 @@ class PluginManager
     }
 
     /**
+     * 플러그인 재로드
+     */
+    private function reloadPlugin(string $pluginName, string $pluginClass, bool $isUpgrade, string $currentVersion)
+    {
+        // 기존 인스턴스 제거
+        $this->plugins = collect($this->plugins)->reject(function ($plugin) use ($pluginClass) {
+            return get_class($plugin) === $pluginClass;
+        })->toArray();
+
+        // 서비스 등록 해제
+        if ($plugin = $this->findPluginInstance($pluginClass)) {
+            $plugin->unregister();
+        }
+
+        // 컨피그 재로드
+        $this->reloadPluginConfig($pluginName);
+
+        // 새 버전으로 플러그인 로드
+        $this->loadPlugins($pluginName);
+        
+        // 새 버전의 마이그레이션 실행
+        if ($isUpgrade) {
+            $this->runMigrations($pluginName);
+        } else {
+            $this->rollbackMigrations($pluginName, $currentVersion);
+        }
+        
+        // 새 버전 활성화
+        if ($plugin = $this->findPluginInstance($pluginClass)) {
+            $plugin->register();
+            $plugin->boot();
+        }
+        PlugIn::where('class', $pluginClass)->update([
+            'active' => true,
+            'migrate_status' => 'success'
+        ]);
+    }
+
+    /**
+     * 플러그인 설정 재로드
+     */
+    private function reloadPluginConfig(string $pluginName)
+    {
+        $pluginPaths = config('plugin.paths', ['plugins']);
+        
+        foreach ($pluginPaths as $basePath) {
+            $configFile = base_path($basePath) . '/' . $pluginName . '/config.php';
+            if (File::exists($configFile)) {
+                $config = require $configFile;
+                $this->pluginConfigs[$pluginName] = $config;
+                $this->registerPluginNamespace($config);
+                break;
+            }
+        }
+    }
+
+    /**
      * 플러그인 마이그레이션 실행
      */
     protected function runMigrations(string $pluginName)
     {
         $config = $this->pluginConfigs[$pluginName];
         $migrationPath = $this->getBasePathRelative($config['migrations']);
+        $version = $config['version'] ?? '1.0.0';
 
         \Artisan::call('plugin:migrate', [
             'plugin' => $pluginName,
             '--path' => $migrationPath,
             '--force' => true,
+            '--plugin-version' => $version
         ]);
     }
 
-    protected function rollbackMigrations($pluginName)
+    protected function rollbackMigrations($pluginName, $currentVersion = null)
     {
         $config = $this->pluginConfigs[$pluginName];
         $migrationPath = $this->getBasePathRelative($config['migrations']);
+        $version = $currentVersion ?? $config['version'] ?? '1.0.0';
 
         \Artisan::call('plugin:migrate:rollback', [
             'plugin' => $pluginName,
             '--path' => $migrationPath,
             '--force' => true,
+            '--plugin-version' => $version
         ]);
+    }
+
+    /**
+     * 플러그인 버전 변경
+     */
+    public function changeVersion(string $pluginName, string $targetVersion)
+    {
+        $pluginName = $this->classToName($pluginName);
+        if (!isset($this->pluginConfigs[$pluginName])) {
+            throw new \Exception("Plugin configuration not found: {$pluginName}");
+        }
+
+        $config = $this->pluginConfigs[$pluginName];
+        $pluginClass = $this->nameToClass($pluginName, $config);
+        
+        // 현재 버전 확인
+        $currentPlugin = PlugIn::where('class', $pluginClass)->first();
+        if (!$currentPlugin) {
+            throw new \Exception("Plugin not installed: {$pluginName}");
+        }
+
+        $currentVersion = $currentPlugin->version ?? '0.0.0';
+        if ($currentVersion === $targetVersion) {
+            throw new \Exception("Plugin is already at version {$targetVersion}");
+        }
+
+        $isUpgrade = version_compare($currentVersion, $targetVersion) < 0;
+        
+        try {
+            DB::beginTransaction();
+           
+            // 플러그인 상태 업데이트
+            PlugIn::where('class', $pluginClass)->update([
+                'version' => $targetVersion,
+                'migrate_status' => 'pending'
+            ]);
+
+            // 플러그인 재로드
+            $this->reloadPlugin($pluginName, $pluginClass, $isUpgrade, $currentVersion);
+
+            DB::commit();
+
+            Log::info(
+                "Plugin {$pluginName} " . 
+                ($isUpgrade ? "upgraded" : "downgraded") . 
+                " from {$currentVersion} to {$targetVersion}"
+            );
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error("Plugin version change failed: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * 플러그인 인스턴스 찾기
+     */
+    private function findPluginInstance(string $pluginClass)
+    {
+        return collect($this->plugins)->first(function ($plugin) use ($pluginClass) {
+            return get_class($plugin) === $pluginClass;
+        });
     }
 }

@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('plugin_migrations', function (Blueprint $table) {
             $table->id();
             $table->string('plugin')->comment('Plugin name');
+            $table->string('version')->comment('Plugin version');
             $table->string('migration')->comment('Migration file name');
             $table->string('batch')->comment('Batch number');
             $table->timestamps();

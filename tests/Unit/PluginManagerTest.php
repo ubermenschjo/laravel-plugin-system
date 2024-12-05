@@ -47,6 +47,7 @@ class PluginManagerTest extends TestCase
             ],
             'basePath' => __DIR__,
             'migrations' => __DIR__ . '/migrations',
+            'version' => '1.0.0',
         ];
         EOT;
         File::put($this->testPluginPath . '/config.php', $configContent);
@@ -152,6 +153,7 @@ EOT;
                 'plugin' => 'TestPlugin',
                 '--path' => 'plugins/TestPlugin/migrations',
                 '--force' => true,
+                '--plugin-version' => '1.0.0',
             ]);
 
         // make class
@@ -231,6 +233,7 @@ EOT;
                 'plugin' => 'TestPlugin',
                 '--path' => 'plugins/TestPlugin/migrations',
                 '--force' => true,
+                '--plugin-version' => '1.0.0',
             ]);
 
         $this->pluginManager->uninstallPlugin($pluginClass);

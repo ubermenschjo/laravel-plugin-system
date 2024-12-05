@@ -41,6 +41,7 @@ class PluginMigrateRollbackTest extends TestCase
             ],
             'basePath' => __DIR__,
             'migrations' => __DIR__ . '/migrations',
+            'version' => '1.0.0',
         ];
         EOT;
         File::put($this->testPluginPath . '/config.php', $configContent);
@@ -157,6 +158,7 @@ class PluginMigrateRollbackTest extends TestCase
         // plugin_migrations 테이블에 존재하지 않는 마이그레이션 기록 추가
         DB::table('plugin_migrations')->insert([
             'plugin' => 'TestPlugin',
+            'version' => '1.0.0',
             'migration' => 'non_existent_migration.php',
             'batch' => 1,
             'created_at' => now(),

@@ -13,7 +13,7 @@ class PluginMigrateRollback extends Command
      *
      * @var string
      */
-    protected $signature = 'plugin:migrate:rollback {plugin?} {--force} {--path=}';
+    protected $signature = 'plugin:migrate:rollback {plugin?} {--force} {--path=} {--plugin-version=}';
 
     /**
      * The console command description.
@@ -37,7 +37,7 @@ class PluginMigrateRollback extends Command
 
         if ($path) {
             // path 옵션이 있는 경우 직접 롤백 실행
-            $this->rollbackMigrationsFromPath($pluginName, $path);
+            $this->rollbackMigrationsFromPath($pluginName, $path, $this->option('plugin-version'));
             return;
         }
 
@@ -60,12 +60,12 @@ class PluginMigrateRollback extends Command
                 $config = require $configFile;
                 $currentPluginName = basename($directory);
 
-                $this->rollbackMigrations($currentPluginName, $config);
+                $this->rollbackMigrations($currentPluginName, $config, $this->option('plugin-version'));
             }
         }
     }
 
-    protected function rollbackMigrations(string $pluginName, array $config)
+    protected function rollbackMigrations(string $pluginName, array $config, $version = null)
     {
         $migrationPath = $config['migrations'] ?? null;
         if (!$migrationPath || !File::exists($migrationPath)) {
@@ -73,8 +73,12 @@ class PluginMigrateRollback extends Command
         }
 
         $batch = $this->getLastBatchNumber($pluginName);
+        $version = $version ?? $config['version'];
         $migrations = DB::table('plugin_migrations')
             ->where('plugin', $pluginName)
+            ->when($version, function ($query, $version) {
+                return $query->where('version', $version);
+            })
             ->where('batch', $batch)
             ->orderBy('id', 'desc')
             ->get();
@@ -94,32 +98,25 @@ class PluginMigrateRollback extends Command
         }
     }
 
-    protected function rollbackMigrationsFromPath(string $pluginName, string $path)
+    protected function rollbackMigrationsFromPath($plugin, $path, $version = null)
     {
-        $fullPath = base_path($path);
-        if (!File::exists($fullPath)) {
-            $this->error("Migration path does not exist: {$path}");
-            return;
-        }
-
-        $batch = $this->getLastBatchNumber($pluginName);
         $migrations = DB::table('plugin_migrations')
-            ->where('plugin', $pluginName)
-            ->where('batch', $batch)
-            ->orderBy('id', 'desc')
+            ->where('plugin', $plugin)
+            ->when($version, function ($query, $version) {
+                return $query->where('version', $version);
+            })
+            ->orderBy('batch', 'desc')
             ->get();
 
         foreach ($migrations as $migration) {
-            $file = $fullPath . '/' . $migration->migration;
+            $file = base_path($path) . '/' . $migration->migration;
             if (File::exists($file)) {
-                $instance = require $file;
+                $instance = include $file;
                 $instance->down();
 
                 DB::table('plugin_migrations')
                     ->where('id', $migration->id)
                     ->delete();
-
-                $this->info("Rolled back: {$migration->migration}");
             }
         }
     }

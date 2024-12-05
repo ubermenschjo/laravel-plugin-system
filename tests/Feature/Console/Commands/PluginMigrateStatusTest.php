@@ -49,6 +49,7 @@ class PluginMigrateStatusTest extends TestCase
         // 하나의 마이그레이션은 실행된 것으로 설정
         DB::table('plugin_migrations')->insert([
             'plugin' => 'test-plugin',
+            'version' => '1.0.0',
             'migration' => '2024_01_01_000000_create_test_table.php',
             'batch' => 1
         ]);

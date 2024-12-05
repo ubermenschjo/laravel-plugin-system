@@ -13,7 +13,7 @@ class PluginMigrate extends Command
      *
      * @var string
      */
-    protected $signature = 'plugin:migrate {plugin?} {--force} {--path=}';
+    protected $signature = 'plugin:migrate {plugin?} {--force} {--path=} {--plugin-version=}';
 
     /**
      * The console command description.
@@ -37,7 +37,7 @@ class PluginMigrate extends Command
 
         if ($path) {
             // path 옵션이 있는 경우 직접 마이그레이션 실행
-            $this->runMigrationsFromPath($pluginName, $path);
+            $this->runMigrationsFromPath($pluginName, $path, $this->option('plugin-version'));
             return;
         }
 
@@ -75,6 +75,7 @@ class PluginMigrate extends Command
 
         $files = File::glob($migrationPath . '/*.php');
         $batch = $this->getNextBatchNumber($pluginName);
+        $version = $this->option('plugin-version') ?? $config['version'] ?? '1.0.0';
 
         foreach ($files as $file) {
             $migration = require $file;
@@ -90,6 +91,7 @@ class PluginMigrate extends Command
                 'plugin' => $pluginName,
                 'migration' => $fileName,
                 'batch' => $batch,
+                'version' => $version,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -98,36 +100,26 @@ class PluginMigrate extends Command
         }
     }
 
-    protected function runMigrationsFromPath(string $pluginName, string $path)
+    protected function runMigrationsFromPath($plugin, $path, $version = null)
     {
-        $fullPath = base_path($path);
-        if (!File::exists($fullPath)) {
-            $this->error("Migration path does not exist: {$path}");
-            return;
-        }
-
-        $files = File::glob($fullPath . '/*.php');
-        $batch = $this->getNextBatchNumber($pluginName);
-
+        $files = File::glob(base_path($path) . '/*.php');
         foreach ($files as $file) {
-            $migration = require $file;
-            $fileName = basename($file);
-
-            if ($this->hasMigration($pluginName, $fileName)) {
+            if ($this->hasMigration($plugin, basename($file))) {
                 continue;
             }
 
+            $migration = include $file;
             $migration->up();
 
+            // 마이그레이션 기록
             DB::table('plugin_migrations')->insert([
-                'plugin' => $pluginName,
-                'migration' => $fileName,
-                'batch' => $batch,
+                'plugin' => $plugin,
+                'migration' => basename($file),
+                'version' => $this->option('plugin-version') ?? '1.0.0',
+                'batch' => $this->getNextBatchNumber($plugin),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-
-            $this->info("Migrated: {$fileName}");
         }
     }
 

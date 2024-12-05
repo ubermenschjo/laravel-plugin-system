@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('plugins', function (Blueprint $table) {
             $table->id();
             $table->string('class')->comment('プラグインクラス名');
+            $table->string('version')->nullable()->comment('プラグインバージョン');
             $table->boolean('active')->default(false)->comment('プラグインのアクティベーション');
             $table->enum('migrate_status', ['pending', 'success', 'failed', 'rollback'])->default('pending')->comment('マイグレーションステータス');
             $table->timestamps();
