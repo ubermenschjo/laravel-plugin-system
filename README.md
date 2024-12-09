@@ -111,7 +111,7 @@ public function unregister(): void
 
 `loadPlugins()` メソッド:
 
--   `app/Plugins` ディレクトリ内のプラグインを検索
+-   `config/plugins.php` の `plugins` に記載されたプラグインを検索
 -   プラグインクラスをインスタンス化
 -   アクティブなプラグインのみを読み込み
 
@@ -133,6 +133,26 @@ public function unregister(): void
 -   サービスの登録解除
 -   マイグレーションのロールバック
 -   プラグインの非アクティブ化
+
+### 4. プラグインのアップグレード
+
+`changeVersion()` メソッド:
+
+-   マイグレーションの実行
+-   旧バージョンのサービスを削除
+-   旧バージョンのルートとビューを削除
+-   新バージョンのサービスを登録
+-   新バージョンのルートとビューを読み込み
+
+### 5. プラグインのダウングレード
+
+`changeVersion()` メソッド:
+
+-   マイグレーションのロールバック
+-   新バージョンのサービスを削除
+-   新バージョンのルートとビューを削除
+-   旧バージョンのサービスを登録 (現状のファイルシステムに戻す)
+-   旧バージョンのルートとビューを読み込み (現状のファイルシステムに戻す)
 
 ## サービスの登録と上書き
 
@@ -184,3 +204,72 @@ app()->bind(PlanInterface::class, ExtendedPlanService::class);
 -   プラグインの命名規則を厳守すること
 -   マイグレーションは必ずロールバック可能な形で作成すること
 -   サービスの上書き時は既存機能への影響を考慮すること
+
+## プラグイン設定ファイル (config.php)
+
+各プラグインのルートディレクトリに `config.php` を配置する必要があります：
+
+```php
+return [
+    'namespace' => 'ExtendedPlan',          // 省略可能   
+    'version' => '1.0.0',                   // 省略可能
+    'psr4' => [                             // 必須
+        'ExtendedPlan\\' => __DIR__ . '/app' 
+    ],
+    'basePath' => __DIR__, // 省略可能
+    'migrations' => __DIR__ . '/migrations', // 省略可能
+];
+```
+
+### 設定項目
+
+- `namespace`: プラグインの名前空間を定義（Default：プラグイン名）
+- `version`: プラグインのバージョンを指定（バージョン管理に使用）
+- `psr4`: オートローディングの設定
+- `basePath`: プラグインのルートディレクトリ（Default：config.phpの位置）
+- `migrations`: マイグレーションファイルの格納場所（マイグレーションがある場合には必須）
+
+## プラグインコマンド
+
+プラグインの管理に使用できる Artisanコマンド：
+
+### マイグレーション関連
+
+```bash
+# マイグレーションの実行
+php artisan plugin:migrate {plugin?} {--force} {--path=} {--plugin-version=}
+
+# マイグレーションのロールバック
+php artisan plugin:migrate:rollback {plugin?} {--force} {--path=} {--plugin-version=}
+
+# マイグレーションの状態確認
+php artisan plugin:migrate:status {plugin?}
+```
+
+### バージョン管理
+
+```bash
+# プラグインのバージョン変更
+php artisan plugin:version {plugin} {version} {--force}
+```
+
+### コマンドオプション
+
+- `{plugin}`: 対象プラグインの名前
+- `{version}`: 変更先のバージョン
+- `--force`: 確認メッセージをスキップ
+- `--path`: カスタムマイグレーションパスを指定
+- `--plugin-version`: マイグレーション実行時のバージョンを指定
+
+### 使用例
+
+```bash
+# ExtendedPlanプラグインを2.0.0にアップグレード
+php artisan plugin:version ExtendedPlan 2.0.0 --force
+
+# 特定プラグインのマイグレーション実行
+php artisan plugin:migrate ExtendedPlan --force
+
+# マイグレーションのロールバック
+php artisan plugin:migrate:rollback ExtendedPlan --force
+```
